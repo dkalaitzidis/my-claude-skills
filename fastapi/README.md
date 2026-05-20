@@ -18,18 +18,23 @@ Python questions unrelated to an API.
 
 ```
 fastapi/
-├── SKILL.md                          # Foundation: setup, async, settings, CORS,
-│                                     # DB/ORM, Redis, rate limiting, versioning,
+├── SKILL.md                          # Foundation: async spine (engine, lifespan,
+│                                     # DI), settings, CORS, shared enums,
 │                                     # performance, project layout
 └── references/
+    ├── project-setup.md              # uv init, dependencies, pyproject.toml
+    ├── database.md                   # models, queries, repositories, N+1
     ├── auth.md                       # JWT, bcrypt, current-user, RBAC, domain exceptions
     ├── error-handling.md             # ErrorResponse, exception handlers, 422 override
     ├── response-models.md            # Pydantic schemas, GET/POST/PATCH/DELETE patterns
-    ├── testing.md                    # endpoint tests — pytest-asyncio fixtures + patterns
-    ├── e2e-testing.md                # E2E tests — real server, DB, Redis, ARQ worker, CI
+    ├── pagination.md                 # cursor + offset patterns
     ├── background-tasks.md           # BackgroundTasks + ARQ
+    ├── cache.md                      # Redis caching
+    ├── rate-limiting.md              # slowapi
+    ├── versioning.md                 # URL versioning, deprecation, retirement
     ├── logging.md                    # structlog + request ID middleware
-    └── pagination.md                 # cursor + offset patterns
+    ├── testing.md                    # endpoint tests — pytest-asyncio fixtures + patterns
+    └── e2e-testing.md                # E2E tests — real server, DB, Redis, ARQ worker, CI
 ```
 
 `SKILL.md` is always loaded when the skill triggers. The `references/` files

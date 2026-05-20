@@ -82,19 +82,41 @@ uv run pytest tests/e2e/
 docker compose -f docker-compose.test.yml down -v
 ```
 
-Test settings target the test stack ports:
+Test settings target the test stack ports. **Set them via environment
+variables**, not just `dependency_overrides[get_settings]` — lifespan calls
+`get_settings()` directly (not through `Depends()`), so an `app.state` /
+override-based approach silently bypasses lifespan resources. Env vars +
+`cache_clear()` on the `@lru_cache`'d `get_settings` is the reliable path:
 
 ```python
 # tests/e2e/conftest.py
-from app.core.config import Settings
+import pytest
+from app.core.config import get_settings, Settings
 
-E2E_SETTINGS = Settings(
-    database_url="postgresql+asyncpg://test:test@localhost:5433/test_db",
-    redis_url="redis://localhost:6380/0",
-    secret_key="e2e-secret-key-do-not-use-in-production",
-    environment="test",
-    cors_origins=["http://localhost:3000"],
-)
+E2E_ENV = {
+    "DATABASE_URL": "postgresql+asyncpg://test:test@localhost:5433/test_db",
+    "REDIS_URL": "redis://localhost:6380/0",
+    "SECRET_KEY": "e2e-secret-key-do-not-use-in-production",
+    "ENVIRONMENT": "test",
+    "CORS_ORIGINS": '["http://localhost:3000"]',
+}
+
+@pytest.fixture(autouse=True, scope="session")
+def e2e_env():
+    import os
+    saved = {k: os.environ.get(k) for k in E2E_ENV}
+    os.environ.update(E2E_ENV)
+    get_settings.cache_clear()      # force reload from env
+    yield
+    for k, v in saved.items():
+        if v is None:
+            os.environ.pop(k, None)
+        else:
+            os.environ[k] = v
+    get_settings.cache_clear()
+
+# Convenience for tests that need to read settings directly
+E2E_SETTINGS = lambda: get_settings()  # noqa: E731
 ```
 
 ---
@@ -119,16 +141,12 @@ from asgi_lifespan import LifespanManager
 from httpx import AsyncClient, ASGITransport
 
 from app.main import app
-from app.core.config import get_settings
 
 @pytest_asyncio.fixture
-async def e2e_app():
-    # override settings before lifespan runs so the right URLs are used
-    app.dependency_overrides[get_settings] = lambda: E2E_SETTINGS
+async def e2e_app(e2e_env):   # e2e_env autouse session fixture sets env + clears cache
     async with LifespanManager(app) as manager:
         # lifespan startup has now run — app.state.redis, app.state.arq, etc. are real
         yield manager.app
-    app.dependency_overrides.pop(get_settings, None)
 
 @pytest_asyncio.fixture
 async def e2e_client(e2e_app):
@@ -170,26 +188,22 @@ import httpx
 
 @pytest_asyncio.fixture(scope="session")
 async def live_server():
-    # write E2E settings to a temp .env or pass via environment
-    env = {
-        "DATABASE_URL": E2E_SETTINGS.database_url,
-        "REDIS_URL": E2E_SETTINGS.redis_url,
-        "SECRET_KEY": E2E_SETTINGS.secret_key,
-        "ENVIRONMENT": "test",
-    }
+    import os
     proc = subprocess.Popen(
         ["uv", "run", "fastapi", "run", "app/main.py", "--port", "8765"],
-        env={**__import__("os").environ, **env},
+        env={**os.environ, **E2E_ENV},     # E2E_ENV from the conftest above
     )
     # wait for the server to start accepting connections
+    started = False
     deadline = time.time() + 15
     while time.time() < deadline:
         try:
             httpx.get("http://localhost:8765/health", timeout=1)
+            started = True
             break
         except httpx.HTTPError:
             time.sleep(0.2)
-    else:
+    if not started:
         proc.terminate()
         raise RuntimeError("server did not start within 15s")
     yield "http://localhost:8765"
@@ -288,8 +302,8 @@ from arq.worker import Worker
 
 from app.tasks.email import send_welcome_email
 
-async def test_welcome_email_is_processed_by_worker():
-    redis_settings = RedisSettings.from_dsn(E2E_SETTINGS.redis_url)
+async def test_welcome_email_is_processed_by_worker(e2e_env):
+    redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
     pool = await create_pool(redis_settings)
 
     # enqueue a job
@@ -365,9 +379,9 @@ from alembic import command
 from alembic.config import Config
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
-async def apply_migrations():
+async def apply_migrations(e2e_env):
     cfg = Config("alembic.ini")
-    cfg.set_main_option("sqlalchemy.url", E2E_SETTINGS.database_url.replace("+asyncpg", ""))
+    cfg.set_main_option("sqlalchemy.url", get_settings().database_url.replace("+asyncpg", ""))
     command.upgrade(cfg, "head")
     yield
     command.downgrade(cfg, "base")    # optional — tmpfs Postgres throws this away anyway

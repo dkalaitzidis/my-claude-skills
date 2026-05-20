@@ -14,6 +14,7 @@ uv add structlog
 
 ```python
 # app/core/logging.py
+import sys
 import structlog
 import logging
 
@@ -26,7 +27,7 @@ def configure_logging() -> None:
             structlog.processors.JSONRenderer(),   # machine-readable in production
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.WriteLoggerFactory(file=sys.stderr),
     )
 
 logger = structlog.get_logger()
@@ -51,7 +52,7 @@ def configure_logging() -> None:
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
-        logger_factory=structlog.PrintLoggerFactory(),
+        logger_factory=structlog.WriteLoggerFactory(file=sys.stderr),
     )
 ```
 

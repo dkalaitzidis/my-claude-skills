@@ -186,8 +186,8 @@ async def delete_item(
     ...
 ```
 
-`Role` lives in `app/core/enums.py` — see the "Shared enums and types"
-section in the main `SKILL.md`.
+`Role` lives in `app/core/enums.py` — see "Shared enums and types" in
+`SKILL.md`.
 
 For more granular permissions (e.g. "this user can edit *this specific*
 resource"), write a resource-scoped dependency:
@@ -229,8 +229,8 @@ async def login(
     }
 ```
 
-Apply a stricter rate limit to this endpoint to prevent brute force — see
-the rate-limiting section in the main `SKILL.md`.
+Apply a stricter rate limit (`5/minute` per IP) to prevent brute force — see
+`rate-limiting.md`.
 
 ---
 

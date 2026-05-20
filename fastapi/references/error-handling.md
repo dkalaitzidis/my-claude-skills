@@ -237,7 +237,7 @@ class RateLimitExceededError(AppError):
 
 Note: `slowapi`'s built-in `RateLimitExceeded` is a separate concern — that
 one has its own handler registered separately (`_rate_limit_exceeded_handler`,
-see the rate limiting section in `SKILL.md`). The `RateLimitExceededError`
+see `rate-limiting.md`). The `RateLimitExceededError`
 above is for cases where *your code* enforces a custom rate limit (e.g. a
 per-user quota beyond what slowapi tracks).
 

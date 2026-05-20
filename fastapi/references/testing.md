@@ -126,6 +126,9 @@ async def client(db):
     app.dependency_overrides.pop(get_db, None)
 
 # --- auth token helpers ---
+# Tokens must be issued for users that actually exist in the test DB, otherwise
+# get_current_user fails the db.get(User, user_id) lookup and raises 401
+# regardless of role — masking role-based tests as auth failures.
 def _make_token(user_id: int, role: str) -> str:
     return jwt.encode(
         {"sub": str(user_id), "role": role, "exp": datetime.now(timezone.utc) + timedelta(minutes=15)},
@@ -133,23 +136,33 @@ def _make_token(user_id: int, role: str) -> str:
         algorithm="HS256",
     )
 
-@pytest.fixture
-def admin_token() -> str:
-    return _make_token(user_id=1, role=Role.ADMIN)
-
-@pytest.fixture
-def viewer_token() -> str:
-    return _make_token(user_id=2, role=Role.VIEWER)
-
-# --- seeded user fixture ---
-@pytest_asyncio.fixture
-async def existing_user(db) -> User:
-    # let the DB assign the id to avoid sequence collisions on Postgres
-    user = User(email="existing@example.com", role=Role.VIEWER, hashed_password="hashed")
+async def _seed_user(db, email: str, role: Role) -> User:
+    user = User(email=email, role=role, hashed_password="hashed")
     db.add(user)
     await db.commit()
     await db.refresh(user)
     return user
+
+@pytest_asyncio.fixture
+async def admin_user(db) -> User:
+    return await _seed_user(db, "admin@example.com", Role.ADMIN)
+
+@pytest_asyncio.fixture
+async def viewer_user(db) -> User:
+    return await _seed_user(db, "viewer@example.com", Role.VIEWER)
+
+@pytest.fixture
+def admin_token(admin_user) -> str:
+    return _make_token(user_id=admin_user.id, role=Role.ADMIN)
+
+@pytest.fixture
+def viewer_token(viewer_user) -> str:
+    return _make_token(user_id=viewer_user.id, role=Role.VIEWER)
+
+# --- seeded user fixture ---
+@pytest_asyncio.fixture
+async def existing_user(db) -> User:
+    return await _seed_user(db, "existing@example.com", Role.VIEWER)
 ```
 
 ---

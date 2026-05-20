@@ -97,11 +97,19 @@ from arq.connections import RedisSettings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    settings = get_settings()
+    settings = get_settings()        # ⚠ direct call — see note below
     app.state.arq = await create_pool(RedisSettings.from_dsn(settings.redis_url))
     yield
     await app.state.arq.close()
 ```
+
+> **Why this isn't `Depends(get_settings)`.** Lifespan runs *before* any
+> request, so dependency resolution isn't available — `get_settings()` is
+> called directly. The implication for tests: `app.dependency_overrides`
+> does **not** affect lifespan-loaded resources. To redirect ARQ/Redis/DB
+> at the test stack, set env vars before app import and `cache_clear()` the
+> `@lru_cache`'d `get_settings` — see the `e2e_env` fixture in
+> `e2e-testing.md`.
 
 ### Dispatch from an endpoint
 

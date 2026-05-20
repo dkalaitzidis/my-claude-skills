@@ -21,8 +21,7 @@ date_added: '2026-05-20'
 - Writing async tests with pytest and pytest-asyncio
 - Diagnosing or optimising slow/blocking routes and database queries
 - Offloading background or async work (BackgroundTasks or ARQ)
-- Architecting a new FastAPI service: project layout, dependency injection,
-  lifespan events, settings management
+- Architecting a new FastAPI service: layout, DI, lifespan, settings
 
 ## Do not use this skill when
 
@@ -36,28 +35,32 @@ date_added: '2026-05-20'
 
 ## Reference files — read on demand
 
-This SKILL.md covers project setup, async patterns, settings, CORS, shared
-enums, database/ORM basics, Redis caching, rate limiting, API versioning,
-performance spot-checks, and project layout. For deeper topics, read the
-matching reference file **before** writing code:
+This SKILL.md covers the **spine** every task touches: async engine + lifespan,
+settings, CORS, shared enums, performance spot-checks, project layout, and the
+response approach. For everything else, read the matching reference **before**
+writing code:
 
 | If the task involves… | Read |
 |---|---|
-| Implementing JWT auth, password hashing, current-user deps, or RBAC | `references/auth.md` |
-| Designing `ErrorResponse`, exception handlers, or auditing `HTTPException` use | `references/error-handling.md` |
-| Pydantic response/request schemas, GET/POST/PATCH/DELETE route patterns | `references/response-models.md` |
-| Writing endpoint tests (single-route, in-process, fast) | `references/testing.md` |
-| Writing E2E tests (real server, real DB/Redis, user journeys, ARQ workers, CORS preflight, migrations, CI) | `references/e2e-testing.md` |
-| Offloading work to background tasks or ARQ workers | `references/background-tasks.md` |
-| Setting up structured logging with structlog + request IDs | `references/logging.md` |
+| Initialising a new project, uv commands, `pyproject.toml` | `references/project-setup.md` |
+| Designing models, queries, repositories, fixing N+1 | `references/database.md` |
+| Implementing JWT auth, password hashing, current-user deps, RBAC | `references/auth.md` |
+| Designing `ErrorResponse`, exception handlers, auditing `HTTPException` use | `references/error-handling.md` |
+| Pydantic schemas, GET/POST/PATCH/DELETE patterns | `references/response-models.md` |
 | Cursor or offset pagination on list endpoints | `references/pagination.md` |
+| Offloading work to background tasks or ARQ workers | `references/background-tasks.md` |
+| Adding Redis caching | `references/cache.md` |
+| Adding rate limits (slowapi) | `references/rate-limiting.md` |
+| Introducing or retiring an API version | `references/versioning.md` |
+| Setting up structured logging with structlog + request IDs | `references/logging.md` |
+| Writing endpoint tests (single-route, in-process, fast) | `references/testing.md` |
+| Writing E2E tests (real server, real DB/Redis, ARQ workers, CORS, migrations, CI) | `references/e2e-testing.md` |
 
-Read the reference file in full before answering — these contain working
-patterns, not just hints. Don't reconstruct from memory.
+Read the reference file in full — they contain working patterns, not hints.
 
 **Tightly coupled pairs.** For auth questions, read **both** `auth.md` and
-`error-handling.md` — the auth dependencies raise domain exceptions that
-only become proper HTTP responses through the registered handlers.
+`error-handling.md` — the auth dependencies raise domain exceptions that only
+become proper HTTP responses through the registered handlers.
 
 **Two testing layers.** `testing.md` covers endpoint tests (fast, in-process,
 swap DB session per test) — every endpoint should have these. `e2e-testing.md`
@@ -69,89 +72,10 @@ have one of these.
 
 ## Requirements
 
-```
-FastAPI ≥ 0.136.1 · Pydantic V2 (≥ 2.0) · SQLAlchemy ≥ 2.0 · Python ≥ 3.10 · uv ≥ 0.4
-```
-
-These patterns rely on APIs introduced in these versions — earlier releases
-will produce confusing errors. Specifically: `lifespan=` (FastAPI 0.93+),
-`Annotated` dependencies (0.95+), `mapped_column` + `Mapped[]` (SQLAlchemy
-2.0), `model_dump()` / `model_validate()` (Pydantic V2), `async_sessionmaker`
-(SQLAlchemy 2.0). Python 3.12 is the recommended runtime for new projects.
-
-Use **uv** as the package manager throughout — never `pip` or `pip-tools`.
-It's 10–100x faster, manages the virtualenv automatically, and produces a
-lockfile that guarantees reproducible installs across dev, CI, and production.
-
----
-
-## Project setup (greenfield)
-
-```bash
-uv init my-api
-cd my-api
-uv python pin 3.12
-```
-
-**Runtime dependencies:**
-
-```bash
-uv add "fastapi[standard]>=0.136.1"   # includes uvicorn + fastapi-cli
-uv add "sqlalchemy[asyncio]>=2.0" asyncpg
-uv add "pydantic-settings>=2.0"
-uv add "PyJWT>=2.8" "bcrypt>=4.0"     # see auth.md
-uv add httpx                          # async HTTP client
-```
-
-**Optional, add only what you need:**
-
-```bash
-uv add redis arq                      # caching + async task queue
-uv add structlog                      # JSON logging
-uv add slowapi                        # rate limiting
-```
-
-**Dev/test dependencies** (full setup in `testing.md` and `e2e-testing.md`):
-
-```bash
-uv add --dev pytest pytest-asyncio httpx anyio pytest-cov pytest-mock
-uv add --dev asgi-lifespan            # E2E — actually run lifespan in tests
-uv add --dev ruff mypy
-```
-
-**`pyproject.toml` tool config:**
-
-```toml
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-testpaths = ["tests"]
-
-[tool.ruff]
-line-length = 88
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "ASYNC"]   # ASYNC catches blocking calls in async fns
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-plugins = ["pydantic.mypy"]
-```
-
-**Run:**
-
-```bash
-uv run fastapi dev app/main.py        # hot-reload, OpenAPI at /docs
-uv add <pkg>                          # never edit pyproject.toml by hand
-uv remove <pkg>
-uv sync                               # re-sync venv after pulling
-```
-
-> **Auth library choice (full details in `auth.md`):** use `PyJWT` + `bcrypt`
-> for rolling your own. Use `fastapi-users` if you want registration, email
-> verification, and password reset out of the box. Avoid `python-jose` and
-> `passlib` — both unmaintained.
+`FastAPI ≥ 0.136.1 · Pydantic V2 · SQLAlchemy 2.0 async · Python ≥ 3.10 · uv`.
+Patterns here rely on `lifespan=`, `Annotated` deps, `Mapped[]` /
+`mapped_column`, `model_dump()` / `model_validate()`, and `async_sessionmaker`
+— earlier releases will produce confusing errors. Python 3.12 recommended.
 
 ---
 
@@ -176,19 +100,19 @@ uv sync                               # re-sync venv after pulling
 
 ---
 
-## Async patterns
+## Async spine — engine, session, lifespan
 
-**Async SQLAlchemy session factory:**
+The async engine + `get_db` dependency + lifespan are the foundation every
+other reference builds on. Define them once, here:
 
 ```python
+# app/core/database.py
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from typing import AsyncGenerator
 
 engine = create_async_engine(
-    "postgresql+asyncpg://user:pass@localhost/db",
-    pool_size=10,
-    max_overflow=20,
-    pool_timeout=30,
-    pool_recycle=1800,
+    settings.database_url,
+    pool_size=10, max_overflow=20, pool_timeout=30, pool_recycle=1800,
 )
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -197,9 +121,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 ```
 
-**Lifespan for startup/shutdown:**
-
 ```python
+# app/main.py
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -212,13 +135,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 ```
 
-**The lifespan-managed resource pattern.** For any pooled resource (HTTP
-client, Redis pool, ARQ pool): create once in `lifespan`, store on
-`app.state`, expose via a `Depends()` that yields from `request.app.state`.
-Never create new clients per request, never store as module-level globals.
+### Lifespan-managed resource pattern
+
+For any pooled resource (HTTP client, Redis pool, ARQ pool): create once in
+`lifespan`, store on `app.state`, expose via a `Depends()` that yields from
+`request.app.state`. Never create new clients per request; never store as
+module-level globals.
 
 ```python
-# example: httpx client. Same shape for redis, arq, etc.
+# example: httpx. Same shape for redis (cache.md), arq (background-tasks.md).
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.http_client = httpx.AsyncClient(timeout=10.0)
@@ -227,22 +152,22 @@ async def lifespan(app: FastAPI):
 
 async def get_http_client(request: Request) -> AsyncGenerator[httpx.AsyncClient, None]:
     yield request.app.state.http_client
-
-@router.get("/external")
-async def fetch_external(client: httpx.AsyncClient = Depends(get_http_client)) -> dict:
-    response = await client.get("https://api.example.com/data")
-    return response.json()
 ```
 
 Always `httpx`, never `requests`. Always `await asyncio.sleep`, never
 `time.sleep`.
 
+> **Lifespan + tests gotcha.** Lifespan calls `get_settings()` directly, not
+> through `Depends()`, so `app.dependency_overrides` does **not** affect
+> lifespan-loaded resources. Tests that need real lifespan (E2E) must set
+> env vars and `cache_clear()` the settings — see `e2e-testing.md`.
+
 ---
 
 ## Settings management
 
-Use `pydantic-settings`. Never read `os.environ` directly in routes —
-inject settings via `Depends()`.
+Use `pydantic-settings`. Never read `os.environ` directly in routes — inject
+settings via `Depends()`.
 
 ```python
 # app/core/config.py
@@ -250,29 +175,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-    )
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
-    # database
     database_url: str
-    db_pool_size: int = 10
-    db_max_overflow: int = 20
-
-    # auth — see auth.md
     secret_key: str
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
-
-    # redis (optional)
     redis_url: str | None = None
-
-    # cors — explicit allowlist, never ["*"] in prod
-    cors_origins: list[str] = []
-
-    # app
+    cors_origins: list[str] = []           # never ["*"] in prod
     environment: str = "development"
     debug: bool = False
 
@@ -291,13 +201,10 @@ async def health(settings: Settings = Depends(get_settings)) -> dict:
 settings = Settings()
 ```
 
-Override in tests:
+Override per-test:
 
 ```python
-app.dependency_overrides[get_settings] = lambda: Settings(
-    database_url="postgresql+asyncpg://user:pass@localhost/test_db",
-    secret_key="test-secret",
-)
+app.dependency_overrides[get_settings] = lambda: Settings(...)
 ```
 
 ---
@@ -313,7 +220,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,       # e.g. ["https://app.example.com"]
+    allow_origins=settings.cors_origins,      # e.g. ["https://app.example.com"]
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
@@ -322,9 +229,8 @@ app.add_middleware(
 )
 ```
 
-Per-environment:
-- **development** — `["http://localhost:3000", "http://localhost:5173"]`
-- **staging/production** — explicit production domains, never wildcards
+- **dev** — `["http://localhost:3000", "http://localhost:5173"]`
+- **staging/prod** — explicit production domains, never wildcards
 
 E2E tests for preflight live in `e2e-testing.md`.
 
@@ -345,167 +251,9 @@ class Role(StrEnum):
     VIEWER = "viewer"
 ```
 
-```python
-from app.core.enums import Role   # use this import everywhere
-```
-
-`Role` is used by the User model, the RBAC dependency in `auth.md`, and
-test fixtures in `testing.md`.
-
----
-
-## Database & ORM (SQLAlchemy 2.0 async)
-
-**Model definition:**
-
-```python
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy import ForeignKey, String, func
-import datetime
-
-from app.core.enums import Role
-
-class Base(DeclarativeBase):
-    pass
-
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    role: Mapped[str] = mapped_column(String(50), default=Role.VIEWER)
-    hashed_password: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime.datetime] = mapped_column(server_default=func.now())
-    posts: Mapped[list["Post"]] = relationship(back_populates="author", lazy="selectin")
-```
-
-**Async queries — avoid N+1 with `selectinload` / `joinedload`:**
-
-```python
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
-
-async def get_user_with_posts(db: AsyncSession, user_id: int) -> User | None:
-    result = await db.execute(
-        select(User)
-        .where(User.id == user_id)
-        .options(selectinload(User.posts))   # ✅ not lazy-loaded on access
-    )
-    return result.scalar_one_or_none()
-```
-
-**Repository pattern — keep DB access out of route handlers:**
-
-```python
-class UserRepository:
-    def __init__(self, db: AsyncSession):
-        self.db = db
-
-    async def get_by_email(self, email: str) -> User | None:
-        result = await self.db.execute(select(User).where(User.email == email))
-        return result.scalar_one_or_none()
-
-    async def create(self, email: str, hashed_password: str) -> User:
-        user = User(email=email, hashed_password=hashed_password)
-        self.db.add(user)
-        await self.db.commit()
-        await self.db.refresh(user)
-        return user
-```
-
----
-
-## Redis caching (optional)
-
-Same lifespan-managed resource pattern as `httpx`:
-
-```python
-# app/core/cache.py
-import redis.asyncio as aioredis
-import json
-from fastapi import Request
-
-async def get_redis(request: Request) -> AsyncGenerator[aioredis.Redis, None]:
-    yield request.app.state.redis
-
-async def get_cached(key: str, ttl: int, fetch_fn, redis: aioredis.Redis):
-    cached = await redis.get(key)
-    if cached:
-        return json.loads(cached)
-    value = await fetch_fn()
-    await redis.setex(key, ttl, json.dumps(value))
-    return value
-```
-
-```python
-# in lifespan
-app.state.redis = aioredis.from_url(settings.redis_url, decode_responses=True)
-# at shutdown
-await app.state.redis.aclose()
-```
-
----
-
-## Rate limiting
-
-`slowapi` — apply at the router level, not inside handlers.
-
-```python
-# app/core/rate_limit.py
-from slowapi import Limiter
-from slowapi.util import get_remote_address
-
-limiter = Limiter(key_func=get_remote_address)
-```
-
-```python
-# app/main.py
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
-from app.core.rate_limit import limiter
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-```
-
-```python
-@router.get("/items")
-@limiter.limit("60/minute")
-async def list_items(request: Request, ...):
-    ...
-
-@router.post("/auth/token")
-@limiter.limit("5/minute")              # tight limit on auth — prevents brute force
-async def login(request: Request, ...):
-    ...
-```
-
----
-
-## API versioning
-
-Default to URL versioning (`/v1/`) — explicit, cacheable, easy to route at
-the infrastructure level.
-
-```python
-# app/routers/v1/users.py
-router = APIRouter(prefix="/users", tags=["users"])
-
-# app/main.py
-app.include_router(users_v1.router, prefix="/v1")
-app.include_router(users_v2.router, prefix="/v2")
-```
-
-**Rules:**
-- New version only for breaking changes (field removal, type change, behaviour change)
-- Additive changes (new optional fields, new endpoints) don't need a new version
-- Mark deprecated endpoints with `deprecated=True` so they appear in OpenAPI
-
-```python
-@router.get("/{user_id}", deprecated=True, response_model=UserOutV1)
-async def get_user_v1(...):
-    ...
-```
+`Role` is used by the User model (`database.md`), the RBAC dependency
+(`auth.md`), and test fixtures (`testing.md`). Always import from
+`app.core.enums`.
 
 ---
 
@@ -515,7 +263,7 @@ Always perform on any endpoint:
 
 - No `time.sleep` or sync `requests` inside `async def` — use `await asyncio.sleep` and `httpx.AsyncClient`
 - No missing `await` before `db.execute()` / `db.commit()`
-- No default `lazy="lazy"` on relationships accessed in the same request — use `selectin` or `joined`
+- No default `lazy="lazy"` on relationships accessed in the same request — use `selectin` or `joined` (see `database.md`)
 - No unbounded list endpoints — see `pagination.md` for cursor / offset patterns and the `MAX_PAGE_SIZE` cap
 
 ---
@@ -532,18 +280,18 @@ app/
 │   ├── security.py      # JWT helpers, password hashing, get_current_user (see auth.md)
 │   ├── database.py      # engine, AsyncSessionLocal, get_db
 │   ├── http.py          # get_http_client (httpx pool)
-│   ├── arq.py           # get_arq (ARQ pool, if used)
-│   ├── cache.py         # get_redis (optional)
-│   ├── rate_limit.py    # slowapi Limiter instance
+│   ├── arq.py           # get_arq (ARQ pool, if used — see background-tasks.md)
+│   ├── cache.py         # get_redis (optional — see cache.md)
+│   ├── rate_limit.py    # slowapi Limiter (see rate-limiting.md)
 │   ├── logging.py       # structlog configuration (see logging.md)
 │   └── exception_handlers.py  # register_exception_handlers (see error-handling.md)
 ├── middleware/
 │   └── request_id.py    # RequestIDMiddleware (see logging.md)
-├── models/              # SQLAlchemy ORM models
+├── models/              # SQLAlchemy ORM models (see database.md)
 ├── schemas/             # Pydantic V2 schemas (see response-models.md) + ErrorResponse
-├── repositories/        # async data-access layer
+├── repositories/        # async data-access layer (see database.md)
 ├── routers/
-│   ├── v1/              # versioned routers
+│   ├── v1/              # versioned routers (see versioning.md)
 │   └── v2/
 ├── tasks/               # background task modules (see background-tasks.md)
 │   ├── email.py

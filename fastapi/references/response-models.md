@@ -135,23 +135,8 @@ the status is `204 No Content`.
 
 ## Annotate error responses in OpenAPI
 
-So clients see the full contract — not just the happy-path schema:
-
-```python
-@router.get(
-    "/{user_id}",
-    response_model=UserOut,
-    responses={
-        404: {"model": ErrorResponse},
-        403: {"model": ErrorResponse},
-    },
-)
-async def get_user(...):
-    ...
-```
-
-For app-wide defaults (every route returns `ErrorResponse` on 422 and 500),
-set them on the `FastAPI` instance — see `error-handling.md`.
+Use `responses={404: {"model": ErrorResponse}, ...}` so clients see the full
+contract. See `error-handling.md` for the per-route and app-wide patterns.
 
 ---
 
