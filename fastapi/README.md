@@ -18,10 +18,13 @@ Python questions unrelated to an API.
 
 ```
 fastapi/
-├── SKILL.md                          # Foundation: setup, async, settings, auth,
-│                                     # error handling, DB, CORS, rate limiting,
-│                                     # versioning, project layout
+├── SKILL.md                          # Foundation: setup, async, settings, CORS,
+│                                     # DB/ORM, Redis, rate limiting, versioning,
+│                                     # performance, project layout
 └── references/
+    ├── auth.md                       # JWT, bcrypt, current-user, RBAC, domain exceptions
+    ├── error-handling.md             # ErrorResponse, exception handlers, 422 override
+    ├── response-models.md            # Pydantic schemas, GET/POST/PATCH/DELETE patterns
     ├── testing.md                    # endpoint tests — pytest-asyncio fixtures + patterns
     ├── e2e-testing.md                # E2E tests — real server, DB, Redis, ARQ worker, CI
     ├── background-tasks.md           # BackgroundTasks + ARQ
