@@ -22,7 +22,8 @@ fastapi/
 │                                     # error handling, DB, CORS, rate limiting,
 │                                     # versioning, project layout
 └── references/
-    ├── testing.md                    # pytest-asyncio fixtures + test patterns
+    ├── testing.md                    # endpoint tests — pytest-asyncio fixtures + patterns
+    ├── e2e-testing.md                # E2E tests — real server, DB, Redis, ARQ worker, CI
     ├── background-tasks.md           # BackgroundTasks + ARQ
     ├── logging.md                    # structlog + request ID middleware
     └── pagination.md                 # cursor + offset patterns

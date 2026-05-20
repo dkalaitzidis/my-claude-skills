@@ -4,6 +4,13 @@ Read this file when writing pytest-asyncio tests, setting up fixtures, or
 debugging test isolation issues. The patterns here assume the project layout
 and settings/dependency-injection conventions from the main `SKILL.md`.
 
+> **This file covers endpoint tests** — fast, in-process, one route at a time,
+> with the DB session swapped via `dependency_overrides`. For end-to-end tests
+> against a real server, real Postgres, real Redis, real lifespan, and real
+> ARQ workers (multi-step user journeys, CORS preflight, migrations, CI), see
+> `e2e-testing.md`. Every endpoint should have endpoint tests; every critical
+> user journey should additionally have one E2E test.
+
 ## Table of contents
 
 - [Coverage target](#coverage-target)

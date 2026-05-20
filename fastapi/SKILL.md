@@ -43,13 +43,20 @@ specialised topics, read the matching reference file **before** writing code:
 
 | If the task involves… | Read |
 |---|---|
-| Writing pytest-asyncio tests, fixtures, or test isolation | `references/testing.md` |
+| Writing endpoint tests (single-route, in-process, fast) | `references/testing.md` |
+| Writing E2E tests (real server, real DB/Redis, user journeys, ARQ workers, CORS preflight, migrations, CI) | `references/e2e-testing.md` |
 | Offloading work to background tasks or ARQ workers | `references/background-tasks.md` |
 | Setting up structured logging with structlog + request IDs | `references/logging.md` |
 | Cursor or offset pagination on list endpoints | `references/pagination.md` |
 
 Read the reference file in full before answering — these contain working
 patterns, not just hints. Don't reconstruct from memory.
+
+**Two testing layers.** `testing.md` covers endpoint tests (fast, in-process,
+swap DB session per test) — every endpoint should have these. `e2e-testing.md`
+covers end-to-end tests (real ASGI server, real Postgres, real Redis, real
+lifespan, real ARQ worker) — every critical user journey should additionally
+have one of these. Run both; they catch different failures.
 
 ---
 
@@ -110,11 +117,12 @@ uv add structlog                       # structured JSON logging — see referen
 uv add slowapi                         # rate limiting
 ```
 
-**3. Add dev/test dependencies** (see `references/testing.md` for the full setup):
+**3. Add dev/test dependencies** (full setup in `references/testing.md` and `references/e2e-testing.md`):
 
 ```bash
 uv add --dev pytest pytest-asyncio httpx anyio pytest-cov pytest-mock
-uv add --dev ruff mypy                 # linting + type checking
+uv add --dev asgi-lifespan                 # E2E — actually run lifespan in tests
+uv add --dev ruff mypy                     # linting + type checking
 ```
 
 **4. Recommended `pyproject.toml` tool config:**
@@ -172,6 +180,8 @@ uv sync              # re-sync venv after pulling changes from git
    errors return the same `ErrorResponse` shape as everything else.
 5. **Write the test alongside the code.** Always provide a `pytest-asyncio` test
    for any non-trivial endpoint or utility shown — see `references/testing.md`.
+   For critical user journeys (signup, login, payment, etc.) also add an E2E
+   test — see `references/e2e-testing.md`.
 6. **Call out performance risks inline.** Flag N+1 queries, missing `await`, or
    blocking calls (e.g. `time.sleep`, sync `requests`) with a short `# ⚠` comment.
 7. **Never return unbounded collections.** Every list endpoint must paginate.
@@ -939,5 +949,8 @@ app/
 │   └── worker.py        # ARQ WorkerSettings
 └── tests/
     ├── conftest.py
-    └── routers/
+    ├── routers/          # endpoint tests (in-process, fast)
+    └── e2e/              # end-to-end tests (real server + Postgres + Redis)
+        ├── conftest.py   # LifespanManager / live_server fixtures
+        └── test_*.py     # user journeys, ARQ workers, CORS preflight
 ```

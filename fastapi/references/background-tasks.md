@@ -164,10 +164,13 @@ class WorkerSettings:
 
 ## Testing background tasks
 
-See `testing.md` for the full patterns. Summary:
+Two layers:
 
-- **BackgroundTasks** — patch the task function, assert it was called
-- **ARQ** — override `get_arq` with an `AsyncMock`, assert `enqueue_job` was called
-
-Never test the worker process itself in unit tests — that's an integration
-concern. Trust the ARQ library; verify only that your code dispatches correctly.
+- **Endpoint tests** (`testing.md`) — mock the dispatch. For `BackgroundTasks`,
+  patch the task function and assert it was called. For ARQ, override `get_arq`
+  with an `AsyncMock` and assert `enqueue_job` was called. Fast, deterministic,
+  covers your code's dispatch logic.
+- **E2E tests** (`e2e-testing.md`) — run a real ARQ worker in burst mode against
+  a real Redis, enqueue a job, and assert the side effect. Slower, but the only
+  way to verify the worker would actually pick up and process your jobs in
+  production. Add one of these per critical async path.
